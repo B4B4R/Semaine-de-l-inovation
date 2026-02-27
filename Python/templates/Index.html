@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Bio-Monitor Record</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', sans-serif; transition: background-color 0.4s ease; 
+            display: flex; flex-direction: column; align-items: center;
+            background-color: #f0f0f0; margin: 0; padding: 20px; color: #000;
+        }
+        .container { width: 100%; max-width: 700px; display: flex; flex-direction: column; gap: 10px; }
+        .chart-box { background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); height: 150px; }
+        .metrics { 
+            background: rgba(255,255,255,0.9); padding: 15px; border-radius: 50px; 
+            display: flex; justify-content: space-around; align-items: center; box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .metric-item { text-align: center; font-weight: bold; }
+        .metric-val { font-size: 1.5em; display: block; }
+        .status-badge { padding: 8px 15px; border-radius: 20px; background: #333; color: white; min-width: 120px; text-align: center; }
+        
+        .record-btn {
+            margin-top: 15px; padding: 12px 40px; border-radius: 30px; border: none;
+            font-weight: bold; cursor: pointer; font-size: 1.1em; transition: 0.3s;
+        }
+        .btn-off { background: #27ae60; color: white; }
+        .btn-on { background: #e74c3c; color: white; }
+
+        .inspire-bg { background-color: #00d2ff; } 
+        .expire-bg { background-color: #38ef7d; }  
+        .apnee-bg { background-color: #ff9f43; } 
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="chart-box"><canvas id="respChart"></canvas></div>
+        <div class="chart-box"><canvas id="ppgChart"></canvas></div>
+
+        <div class="metrics">
+            <div class="metric-item"><span id="val-bpm" class="metric-val">0</span><span>BPM</span></div>
+            <div id="status" class="status-badge">PATIENTEZ...</div>
+            <div class="metric-item"><span id="val-rr" class="metric-val">0</span><span>RR (RPM)</span></div>
+        </div>
+
+        <button id="recordBtn" class="record-btn btn-off" onclick="toggleRecord()">RECORD</button>
+    </div>
+
+<script>
+    let isRecording = false;
+    const respCtx = document.getElementById('respChart').getContext('2d');
+    const ppgCtx = document.getElementById('ppgChart').getContext('2d');
+
+    const options = {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        elements: { point: { radius: 0 }, line: { tension: 0.3 } },
+        scales: { x: { display: false } }, plugins: { legend: { display: false } }
+    };
+
+    const respChart = new Chart(respCtx, { type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#005fa3' }] }, options: { ...options, scales: { y: { min: 0, max: 1000 } } } });
+    const ppgChart = new Chart(ppgCtx, { type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#c0392b' }] }, options: { ...options, scales: { y: { beginAtZero: false } } } });
+
+    const evtSource = new EventSource("/stream");
+    evtSource.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        document.body.className = data.phase + "-bg";
+        document.getElementById("status").innerText = data.phase.toUpperCase();
+        document.getElementById("val-bpm").innerText = data.bpm;
+        document.getElementById("val-rr").innerText = data.resp_rate;
+
+        [respChart, ppgChart].forEach((c, i) => {
+            c.data.labels.push(data.seq);
+            c.data.datasets[0].data.push(i === 0 ? data.respiration : data.ppg);
+            if(c.data.labels.length > 150) { c.data.labels.shift(); c.data.datasets[0].data.shift(); }
+            c.update('none');
+        });
+    };
+
+    function toggleRecord() {
+        const btn = document.getElementById("recordBtn");
+        if (!isRecording) {
+            fetch('/start_record');
+            isRecording = true; btn.innerText = "STOP"; btn.className = "record-btn btn-on";
+        } else {
+            let name = prompt("Nom de la session :", "session_" + new Date().getTime());
+            if (name) fetch('/stop_record/' + name).then(() => alert("Fichier " + name + ".csv créé !"));
+            isRecording = false; btn.innerText = "RECORD"; btn.className = "record-btn btn-off";
+        }
+    }
+</script>
+</body>
+</html>
